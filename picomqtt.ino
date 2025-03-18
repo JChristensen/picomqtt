@@ -1,7 +1,7 @@
 // Raspberry Pi Pico W test sketch.
 // Sends time and temperature via MQTT over wifi once a minute.
 // J.Christensen 14Mar2025
-// Developed using Arduino IDE and Earle Philhower's Ardino-Pico core,
+// Developed using Arduino IDE 1.8.19 and Earle Philhower's Ardino-Pico core,
 // https://github.com/earlephilhower/arduino-pico
 // Copyright (C) 2025 by Jack Christensen and licensed under
 // GNU GPL v3.0, https://www.gnu.org/licenses/gpl.html
@@ -38,7 +38,7 @@ MCP79412RTC myRTC;
 MCP9800 mySensor;
 WiFiMulti multi;
 WiFiClient picoClient;
-HardwareSerial& mySerial{Serial1};
+HardwareSerial& mySerial{Serial};
 JC_MQTT mq(picoClient, mySerial);
 volatile time_t isrUTC;     // ISR's copy of current time in UTC
 
@@ -49,7 +49,8 @@ void setup()
     hb.begin();
     mySerial.begin(115200);
     delay(2000);
-    Serial.printf("\n%s\nCompiled %s %s\n", __FILE__, __DATE__, __TIME__);
+    mySerial.printf("\n%s\nCompiled %s %s F_CPU=%d MHz\n",
+        __FILE__, __DATE__, __TIME__, F_CPU/1000000);
     checkI2C();
     mySensor.begin();
 
@@ -74,7 +75,7 @@ void setup()
     attachInterrupt(RTC_1HZ_PIN, incrementTime, FALLING);
     myRTC.squareWave(MCP79412RTC::SQWAVE_1_HZ);
     lastUTC = getUTC();
-    // wait for the first interrupt
+    // wait for the next interrupt
     while (lastUTC == getUTC()) delay(10);
     time_t utc = myRTC.get();
     noInterrupts();

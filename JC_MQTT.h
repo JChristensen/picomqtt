@@ -1,7 +1,7 @@
 // Arduino JC_MQTT Library
 // A library to send messages to an MQTT broker.
 // Derived from the PubSubClient class.
-// https://github.com/JChristensen/???
+// https://github.com/JChristensen/
 // Copyright (C) 2025 by Jack Christensen and licensed under
 // GNU GPL v3.0, https://www.gnu.org/licenses/gpl.html
 
@@ -25,6 +25,8 @@ class JC_MQTT : public PubSubClient
     private:
         m_states_t m_state{CONNECT};
         uint32_t m_connectRetry;        // connect retry interval, seconds
+        int m_retryCount {0};
+        static constexpr int m_maxRetries {10};
         uint32_t m_msLastConnect;       // time last connected to the broker
         const char* m_clientID;         // unique ID required for each client
         const char* m_pubTopic;         // the topic to publish to
@@ -63,12 +65,18 @@ bool JC_MQTT::run()
         case CONNECT:
             if (connect(m_clientID)) {
                 m_state = WAIT;
-                m_Serial << millis() << F(" Connected to MQTT broker\n");
+                m_retryCount = 0;
+                m_Serial << millis() << " Connected to MQTT broker\n";
             }
             else {
                 m_state = WAIT_CONNECT;
-                m_Serial << millis() << F(" Failed to connect to MQTT broker, rc=") << state() << endl;
-                m_Serial << millis() << F(" Retry in ") << m_connectRetry << F(" seconds.\n");
+                m_Serial << millis() << " Failed to connect to MQTT broker, rc=" << state() << endl;
+                if (++m_retryCount > m_maxRetries) {
+                    m_Serial << "Too many retries, rebooting in 5 seconds.\n";
+                    delay(5000);
+                    rp2040.reboot();
+                }
+                m_Serial << millis() << " Retry in " << m_connectRetry << " seconds.\n";
                 m_msLastConnect = millis();
             }
             break;
@@ -88,7 +96,7 @@ bool JC_MQTT::run()
             }
             else {
                 m_state = CONNECT;
-                m_Serial << millis() << F(" Lost connection to MQTT broker\n");
+                m_Serial << millis() << " Lost connection to MQTT broker\n";
             }
             break;
 
