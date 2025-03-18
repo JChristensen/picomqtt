@@ -36,9 +36,8 @@ PicoConfig cfg;
 Heartbeat hb(LED_BUILTIN, blinkInterval);
 MCP79412RTC myRTC;
 MCP9800 mySensor;
-WiFiMulti multi;
 WiFiClient picoClient;
-HardwareSerial& mySerial{Serial};
+HardwareSerial& mySerial{Serial1};
 JC_MQTT mq(picoClient, mySerial);
 volatile time_t isrUTC;     // ISR's copy of current time in UTC
 
@@ -85,14 +84,21 @@ void setup()
     // connect to wifi
     cfg.begin();    // get credentials stored in eeprom
     cfg.read();
-    mySerial.printf("%d Connecting: %s\n", millis(), cfg.params.ssid);
+    mySerial.printf("%d Connecting: %s", millis(), cfg.params.ssid);
     WiFi.setHostname(cfg.params.hostname);
-    multi.addAP(cfg.params.ssid, cfg.params.psk);
-    if (multi.run() != WL_CONNECTED) {
-        mySerial << "Unable to connect to wifi.\n";
-        resetMCU(10);
+    WiFi.begin(cfg.params.ssid, cfg.params.psk);
+    int wifiTry {0};
+    while (WiFi.status() != WL_CONNECTED) {
+        if (++wifiTry > 10) {
+            mySerial << "\nCannot connect to wifi, reboot in 60 seconds.\n";
+            delay(60000);
+            rp2040.reboot();
+        }
+        delay(1000);
+        mySerial.printf(" .");
+        mySerial.flush();
     }
-    mySerial.printf("%d WiFi connected %s\n", millis(), WiFi.localIP().toString().c_str());
+    mySerial.printf("\n%d WiFi connected %s\n", millis(), WiFi.localIP().toString().c_str());
     mq.begin(mqBroker, mqPort, mqTopic, cfg.params.hostname);
 }
 
@@ -106,6 +112,12 @@ void loop()
     constexpr TimeChangeRule edt = {"EDT", Second, Sun, Mar, 2, -240};  // Daylight time = UTC - 4 hours
     constexpr TimeChangeRule est = {"EST", First, Sun, Nov, 2, -300};   // Standard time = UTC - 5 hours
     static Timezone eastern(edt, est);
+
+    if (WiFi.status() != WL_CONNECTED) {
+        mySerial << millis() << " WiFi connection lost, reboot in 60 seconds.\n";
+        delay(60000);
+        rp2040.reboot();
+    }
 
     if (mq.run()) {
         time_t t = getUTC();
