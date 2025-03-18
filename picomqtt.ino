@@ -49,7 +49,7 @@ void setup()
     hb.begin();
     mySerial.begin(115200);
     delay(2000);
-    mySerial << "\n" __FILE__ "\nCompiled " __DATE__ " " __TIME__ "\n";
+    Serial.printf("\n%s\nCompiled %s %s\n", __FILE__, __DATE__, __TIME__);
     checkI2C();
     mySensor.begin();
 
@@ -84,15 +84,15 @@ void setup()
     // connect to wifi
     cfg.begin();    // get credentials stored in eeprom
     cfg.read();
-    mySerial.printf("%d Connecting: %s\n", millis(), cfg.config.ssid);
-    WiFi.setHostname(cfg.config.hostname);
-    multi.addAP(cfg.config.ssid, cfg.config.psk);
+    mySerial.printf("%d Connecting: %s\n", millis(), cfg.params.ssid);
+    WiFi.setHostname(cfg.params.hostname);
+    multi.addAP(cfg.params.ssid, cfg.params.psk);
     if (multi.run() != WL_CONNECTED) {
         mySerial << "Unable to connect to wifi.\n";
         resetMCU(10);
     }
     mySerial.printf("%d WiFi connected %s\n", millis(), WiFi.localIP().toString().c_str());
-    mq.begin(mqBroker, mqPort, mqTopic, cfg.config.hostname);
+    mq.begin(mqBroker, mqPort, mqTopic, cfg.params.hostname);
 }
 
 void loop()

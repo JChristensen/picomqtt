@@ -11,7 +11,7 @@
 class PicoConfig
 {
     public:
-        struct picoCfg {
+        struct picoParams {
             char hostname[16] {};   // hostname for the pico
             char ssid[64] {};       // wifi ssid
             char psk[64] {};        // wifi psk
@@ -20,7 +20,7 @@ class PicoConfig
         void begin();
         void write();
         void read();
-        picoCfg config;
+        picoParams params;
 
     private:
         static constexpr uint m_eepromSize {256};
@@ -33,10 +33,10 @@ void PicoConfig::begin() {
 }
 
 void PicoConfig::write() {
-    EEPROM.put(m_startAddr, config);
+    EEPROM.put(m_startAddr, params);
     EEPROM.commit();
 }
 
 void PicoConfig::read() {
-    EEPROM.get(m_startAddr, config);
+    EEPROM.get(m_startAddr, params);
 }
