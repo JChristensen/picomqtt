@@ -7,9 +7,10 @@
 // GNU GPL v3.0, https://www.gnu.org/licenses/gpl.html
 //
 // TODO:
-//  1. Investigate WiFiMulti vs ???
-//  2. Recover wifi if connection drops.
-//  3. Renew DHCP lease periodically.
+//  xxx 1. Investigate WiFiMulti vs ???
+//  xxx 2. Recover wifi if connection drops.
+//  ??? 3. Renew DHCP lease periodically.
+//         - Have not found anything that indicates this is needed, or even if it's a thing for wifi.
 //  4. Investigate GroveStreams MQTT API.
 //  5. Investigate RP2040 RTC.
 //  6. Investigate Pico NTP library.
@@ -21,24 +22,27 @@
 #include <Timezone.h>       // https://github.com/JChristensen/Timezone
 #include <WiFi.h>
 #include "JC_MQTT.h"
-#include "Heartbeat.h"
+#include "WifiManager.h"
 #include "PicoConfig.h"
+#include "Heartbeat.h"
 
 // constant parameters
 const char* mqBroker {"z1"};
 constexpr uint32_t mqPort {1883};
 const char* mqTopic {"picotest"};
 constexpr int RTC_1HZ_PIN {16};
+constexpr int wifiLED {15};
 constexpr uint32_t blinkInterval {1000};  // LED blink interval
 
 // object instantiations and globals
+HardwareSerial& mySerial{Serial1};
 PicoConfig cfg;
-Heartbeat hb(LED_BUILTIN, blinkInterval);
 MCP79412RTC myRTC;
 MCP9800 mySensor;
+WifiManager wifi(mySerial);
 WiFiClient picoClient;
-HardwareSerial& mySerial{Serial1};
 JC_MQTT mq(picoClient, mySerial);
+Heartbeat hb(LED_BUILTIN, blinkInterval);
 volatile time_t isrUTC;     // ISR's copy of current time in UTC
 
 bool checkI2C(int sdaPin=4, int sclPin=5);  // function prototype
@@ -46,10 +50,11 @@ bool checkI2C(int sdaPin=4, int sclPin=5);  // function prototype
 void setup()
 {
     hb.begin();
+    pinMode(wifiLED, OUTPUT);
     mySerial.begin(115200);
     delay(2000);
-    mySerial.printf("\n%s\nCompiled %s %s F_CPU=%d MHz\n",
-        __FILE__, __DATE__, __TIME__, F_CPU/1000000);
+    mySerial.printf("\n%s\nCompiled %s %s %s @ %d MHz\n",
+        __FILE__, __DATE__, __TIME__, BOARD_NAME, F_CPU/1000000);
     checkI2C();
     mySensor.begin();
 
@@ -84,21 +89,7 @@ void setup()
     // connect to wifi
     cfg.begin();    // get credentials stored in eeprom
     cfg.read();
-    mySerial.printf("%d Connecting: %s", millis(), cfg.params.ssid);
-    WiFi.setHostname(cfg.params.hostname);
-    WiFi.begin(cfg.params.ssid, cfg.params.psk);
-    int wifiTry {0};
-    while (WiFi.status() != WL_CONNECTED) {
-        if (++wifiTry > 10) {
-            mySerial << "\nCannot connect to wifi, reboot in 60 seconds.\n";
-            delay(60000);
-            rp2040.reboot();
-        }
-        delay(1000);
-        mySerial.printf(" .");
-        mySerial.flush();
-    }
-    mySerial.printf("\n%d WiFi connected %s\n", millis(), WiFi.localIP().toString().c_str());
+    wifi.begin(cfg.params.hostname, cfg.params.ssid, cfg.params.psk);
     mq.begin(mqBroker, mqPort, mqTopic, cfg.params.hostname);
 }
 
@@ -113,23 +104,21 @@ void loop()
     constexpr TimeChangeRule est = {"EST", First, Sun, Nov, 2, -300};   // Standard time = UTC - 5 hours
     static Timezone eastern(edt, est);
 
-    if (WiFi.status() != WL_CONNECTED) {
-        mySerial << millis() << " WiFi connection lost, reboot in 60 seconds.\n";
-        delay(60000);
-        rp2040.reboot();
-    }
-
-    if (mq.run()) {
-        time_t t = getUTC();
-        if (minute(t) != minute(pubLast)) {
-            TimeChangeRule* tcr;    // pointer to the time change rule, use to get TZ abbrev
-            time_t l = eastern.toLocal(t, &tcr);    // convert to local time
-            float F = mySensor.readTempF10(AMBIENT) / 10.0;
-            sprintf(msg, "Pico %s %d-%.2d-%.2d %.2d:%.2d:%.2d %s %.1f°F %ld",
-                picoStatus, year(l), month(l), day(l), hour(l), minute(l), second(l), tcr->abbrev, F, ms);
-            if (pubLast == 0) strcpy(picoStatus, "time");
-            pubLast = t;
-            mq.publish(msg);
+    bool wifiStatus = wifi.run();
+    digitalWrite(wifiLED, wifiStatus);
+    if (wifiStatus) {
+        if (mq.run()) {
+            time_t t = getUTC();
+            if (minute(t) != minute(pubLast)) {
+                TimeChangeRule* tcr;    // pointer to the time change rule, use to get TZ abbrev
+                time_t l = eastern.toLocal(t, &tcr);    // convert to local time
+                float F = mySensor.readTempF10(AMBIENT) / 10.0;
+                sprintf(msg, "Pico %s %d-%.2d-%.2d %.2d:%.2d:%.2d %s %.1f°F %ld",
+                    picoStatus, year(l), month(l), day(l), hour(l), minute(l), second(l), tcr->abbrev, F, ms);
+                if (pubLast == 0) strcpy(picoStatus, "time");
+                pubLast = t;
+                mq.publish(msg);
+            }
         }
     }
     hb.run();

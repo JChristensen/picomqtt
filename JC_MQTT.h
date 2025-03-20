@@ -23,7 +23,7 @@ class JC_MQTT : public PubSubClient
         bool run();
 
     private:
-        m_states_t m_state{CONNECT};
+        m_states_t m_state {CONNECT};
         uint32_t m_connectRetry;        // connect retry interval, seconds
         int m_retryCount {0};
         static constexpr int m_maxRetries {10};
