@@ -30,12 +30,14 @@
 const char* mqBroker {"z1"};
 constexpr uint32_t mqPort {1883};
 const char* mqTopic {"picotest"};
-constexpr int RTC_1HZ_PIN {16};
-constexpr int wifiLED {15};
-constexpr uint32_t blinkInterval {1000};  // LED blink interval
+constexpr int RTC_1HZ_PIN {22};
+constexpr int wifiLED {9};
+constexpr int sdaPin{20}, sclPin{21};       // I2C pins
+constexpr int txdPin{4}, rxdPin{5};         // Serial2 pins
+constexpr uint32_t blinkInterval {1000};    // LED blink interval
 
 // object instantiations and globals
-HardwareSerial& mySerial{Serial1};
+HardwareSerial& mySerial{Serial2};
 PicoConfig cfg;
 MCP79412RTC myRTC;
 MCP9800 mySensor;
@@ -45,17 +47,19 @@ JC_MQTT mq(picoClient, mySerial);
 Heartbeat hb(LED_BUILTIN, blinkInterval);
 volatile time_t isrUTC;     // ISR's copy of current time in UTC
 
-bool checkI2C(int sdaPin=4, int sclPin=5);  // function prototype
-
 void setup()
 {
     hb.begin();
     pinMode(wifiLED, OUTPUT);
+    Serial2.setTX(txdPin);
+    Serial2.setRX(rxdPin);
     mySerial.begin(115200);
     delay(2000);
     mySerial.printf("\n%s\nCompiled %s %s %s @ %d MHz\n",
         __FILE__, __DATE__, __TIME__, BOARD_NAME, F_CPU/1000000);
-    checkI2C();
+    Wire.setSDA(sdaPin);
+    Wire.setSCL(sclPin);
+    checkI2C(sdaPin, sclPin);
     mySensor.begin();
 
     // rtc initialization
@@ -113,8 +117,9 @@ void loop()
                 TimeChangeRule* tcr;    // pointer to the time change rule, use to get TZ abbrev
                 time_t l = eastern.toLocal(t, &tcr);    // convert to local time
                 float F = mySensor.readTempF10(AMBIENT) / 10.0;
-                sprintf(msg, "Pico %s %d-%.2d-%.2d %.2d:%.2d:%.2d %s %.1f°F %ld",
-                    picoStatus, year(l), month(l), day(l), hour(l), minute(l), second(l), tcr->abbrev, F, ms);
+                sprintf(msg, "Pico %s %d-%.2d-%.2d %.2d:%.2d:%.2d %s %.1f°F %ld dBm %ld",
+                    picoStatus, year(l), month(l), day(l), hour(l), minute(l), second(l),
+                    tcr->abbrev, F, WiFi.RSSI(), ms);
                 if (pubLast == 0) strcpy(picoStatus, "time");
                 pubLast = t;
                 mq.publish(msg);
